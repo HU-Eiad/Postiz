@@ -1,6 +1,6 @@
 # Postiz on CranL
 
-Deploys [Postiz](https://github.com/gitroomhq/postiz-app) `v1.47.0` as a single
+Deploys [Postiz](https://github.com/gitroomhq/postiz-app) `v2.23.0` as a single
 CranL Application.
 
 This repo is intentionally small. It holds a root `Dockerfile` (all CranL builds),
@@ -26,7 +26,7 @@ upstream ships a 9-service compose stack, so the pieces have to be split up:
 
 ### Why Temporal has to be external
 
-Postiz v1.47 does not treat Temporal as optional. `apps/backend/src/app.module.ts`
+Postiz v2.23 does not treat Temporal as optional. `apps/backend/src/app.module.ts`
 imports `getTemporalModule(false)` in the root module, and `apps/orchestrator` is
 a full Temporal worker that owns all scheduled posting. Without a Temporal server
 the backend does not boot.
@@ -86,7 +86,7 @@ the repo picker, re-sync the GitHub integration in CranL settings.
 ## Step 2 — Build the patched image
 
 **Actions → "Build patched Postiz image" → Run workflow**, leaving the version at
-`v1.47.0`. It checks out upstream, applies
+`v2.23.0`. It checks out upstream, applies
 `patches/0001-configurable-s3-endpoint.patch`, builds, and pushes to
 `ghcr.io/<you>/postiz`. Takes roughly 20 minutes.
 
@@ -99,7 +99,7 @@ Then:
    name. Commit and push.
 
 > Prefer Cloudflare R2 and want to skip this step? Point the `Dockerfile` at
-> `ghcr.io/gitroomhq/postiz-app:v1.47.0`, leave `S3_ENDPOINT` unset, and fill in
+> `ghcr.io/gitroomhq/postiz-app:v2.23.0`, leave `S3_ENDPOINT` unset, and fill in
 > the R2 credentials instead. Everything else below is unchanged.
 
 ## Step 3 — Create the databases first

@@ -15,9 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       postiz_version:
-        description: 'Upstream Postiz tag to build (e.g. v1.47.0)'
+        description: 'Upstream Postiz tag (check github.com/gitroomhq/postiz-app/tags -- version.txt is stale and NOT the release version)'
         required: true
-        default: 'v1.47.0'
+        default: 'v2.23.0'
 
 permissions:
   contents: read

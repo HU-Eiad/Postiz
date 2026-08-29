@@ -21,11 +21,11 @@
 # Upgrading: re-run the workflow with the new upstream tag, bump the tag here,
 # commit, push. CranL redeploys automatically.
 # ---------------------------------------------------------------------------
-FROM ghcr.io/hu-eiad/postiz:v1.47.0
+FROM ghcr.io/hu-eiad/postiz:v2.23.0
 
 # If you would rather use Cloudflare R2 and skip the patched build entirely,
 # use the official upstream image instead and leave S3_ENDPOINT unset:
-# FROM ghcr.io/gitroomhq/postiz-app:v1.47.0
+# FROM ghcr.io/gitroomhq/postiz-app:v2.23.0
 
 # nginx inside the image listens on 5000 (0.0.0.0) and proxies:
 #   /         -> frontend  (Next.js, localhost:4200)
