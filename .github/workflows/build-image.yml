@@ -1,0 +1,85 @@
+name: Build patched Postiz image
+
+# Builds Postiz from upstream source with our S3-endpoint patch applied, and
+# pushes the result to GHCR. CranL then just pulls this image.
+#
+# Why build here instead of on CranL: the Postiz build runs Nx with
+# NODE_OPTIONS=--max-old-space-size=4096 and takes ~20 minutes. A GitHub runner
+# has 16 GB; a CranL app has 4 GB and would OOM. CranL only has to pull.
+#
+# IMPORTANT: make the resulting GHCR package PUBLIC. CranL has no documented
+# way to supply private registry credentials. The image contains no secrets —
+# all configuration is injected as environment variables at runtime.
+
+on:
+  workflow_dispatch:
+    inputs:
+      postiz_version:
+        description: 'Upstream Postiz tag to build (e.g. v1.47.0)'
+        required: true
+        default: 'v1.47.0'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo (for the patch)
+        uses: actions/checkout@v4
+        with:
+          path: overlay
+
+      - name: Check out Postiz at ${{ inputs.postiz_version }}
+        uses: actions/checkout@v4
+        with:
+          repository: gitroomhq/postiz-app
+          ref: ${{ inputs.postiz_version }}
+          path: postiz
+
+      - name: Apply the S3 endpoint patch
+        working-directory: postiz
+        run: |
+          # Fail loudly rather than silently shipping an unpatched image.
+          git apply --check ../overlay/patches/0001-configurable-s3-endpoint.patch
+          git apply --verbose ../overlay/patches/0001-configurable-s3-endpoint.patch
+          echo "--- verifying S3_ENDPOINT is present in the source ---"
+          grep -r "S3_ENDPOINT" libraries/nestjs-libraries/src/upload/
+
+      - name: Compute image name
+        id: img
+        # GHCR rejects uppercase names, and the owner here is HU-Eiad /
+        # Nseeb-app. Derive from the repo so a rename cannot desync this.
+        run: |
+          echo "name=ghcr.io/$(echo "${{ github.repository }}" | tr "[:upper:]" "[:lower:]")" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: postiz
+          # Upstream builds its release image from Dockerfile.dev (see
+          # gitroomhq/postiz-app .github/workflows/build-containers.yml).
+          file: postiz/Dockerfile.dev
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          build-args: |
+            NEXT_PUBLIC_VERSION=${{ inputs.postiz_version }}
+          tags: |
+            ${{ steps.img.outputs.name }}:${{ inputs.postiz_version }}
+            ${{ steps.img.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

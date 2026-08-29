@@ -1,0 +1,5 @@
+# Real secrets never get committed -- they live in the CranL Environment tab.
+cranl.env
+*.local
+.env
+.DS_Store
