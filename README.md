@@ -1,6 +1,6 @@
 # Postiz on CranL
 
-Deploys [Postiz](https://github.com/gitroomhq/postiz-app) `v2.23.0` as a single
+Deploys [Postiz](https://github.com/gitroomhq/postiz-app) `v2.11.3` as a single
 CranL Application.
 
 This repo is intentionally small. It holds a root `Dockerfile` (all CranL builds),
@@ -18,26 +18,27 @@ upstream ships a 9-service compose stack, so the pieces have to be split up:
 
 | Piece | Where it runs | Notes |
 |---|---|---|
-| Postiz (frontend + backend + orchestrator) | **CranL Application** | One container: nginx on port `5000` fronting all three processes under pm2 |
+| Postiz (frontend + backend + workers + cron) | **CranL Application** | One container: nginx on port `5000` fronting all four processes under pm2 |
 | PostgreSQL | **CranL managed database** | Inject → `DATABASE_URL` |
-| Redis | **CranL managed database** | Inject → `REDIS_URL` |
-| Temporal server | **Temporal Cloud** (external) | See below — cannot run on CranL |
+| Redis | **CranL managed database** | Inject → `REDIS_URL`; also backs the BullMQ job queue |
 | Media storage | **CranL Storage bucket** | Needs a two-line source patch — see below |
 
-### Why Temporal has to be external
+### Why v2.11.3 and not the latest release
 
-Postiz v2.23 does not treat Temporal as optional. `apps/backend/src/app.module.ts`
-imports `getTemporalModule(false)` in the root module, and `apps/orchestrator` is
-a full Temporal worker that owns all scheduled posting. Without a Temporal server
-the backend does not boot.
+Postiz v2.12.0 replaced BullMQ with **Temporal**, wiring it into the backend's
+root `AppModule` so the app cannot boot without a Temporal server. CranL has no
+managed Temporal, and self-hosting it would need gRPC on `7233` plus
+Elasticsearch and its own Postgres, reachable from another app — which CranL's
+single-HTTP-port, no-private-networking model cannot provide. Temporal Cloud
+starts at $100/month.
 
-Self-hosting Temporal would mean a second CranL Application exposing gRPC on
-`7233`, plus Elasticsearch and its own Postgres. CranL Applications are routed
-over HTTP/CDN on a single port and the docs document no internal networking, so a
-Postiz app could not reach it. Postiz already supports Temporal Cloud
-(`TEMPORAL_TLS`, `TEMPORAL_API_KEY`, `TEMPORAL_NAMESPACE` in
-`libraries/nestjs-libraries/src/temporal/temporal.module.ts`), so that is the
-supported path.
+**v2.11.3 is the last release before that change.** It runs its job queue on
+BullMQ over the Redis that CranL already gives you, so the whole stack fits the
+platform natively at no extra cost.
+
+The trade-off is being a few releases behind current. Upgrading past v2.11.3
+means taking on Temporal, so treat that as a deliberate decision rather than a
+routine version bump.
 
 ### Using a CranL Storage bucket
 
@@ -64,8 +65,7 @@ have no persistent volume, so uploaded media would be lost on every redeploy.
 ## Prerequisites
 
 1. A CranL account with GitHub connected (Enterprise plan — unlimited apps/DBs).
-2. A [Temporal Cloud](https://temporal.io/cloud) account (free tier is enough).
-3. This repo pushed to your own GitHub account.
+2. This repo pushed to your own GitHub account.
 
 ---
 
@@ -86,7 +86,7 @@ the repo picker, re-sync the GitHub integration in CranL settings.
 ## Step 2 — Build the patched image
 
 **Actions → "Build patched Postiz image" → Run workflow**, leaving the version at
-`v2.23.0`. It checks out upstream, applies
+`v2.11.3`. It checks out upstream, applies
 `patches/0001-configurable-s3-endpoint.patch`, builds, and pushes to
 `ghcr.io/<you>/postiz`. Takes roughly 20 minutes.
 
@@ -99,7 +99,7 @@ Then:
    name. Commit and push.
 
 > Prefer Cloudflare R2 and want to skip this step? Point the `Dockerfile` at
-> `ghcr.io/gitroomhq/postiz-app:v2.23.0`, leave `S3_ENDPOINT` unset, and fill in
+> `ghcr.io/gitroomhq/postiz-app:v2.11.3`, leave `S3_ENDPOINT` unset, and fill in
 > the R2 credentials instead. Everything else below is unchanged.
 
 ## Step 3 — Create the databases first
@@ -132,21 +132,7 @@ Open each database → set **Inject into App** → select your Postiz app. This 
 `DATABASE_URL` and `REDIS_URL` to the app's environment, which are exactly the
 variable names Postiz expects. Do not also set them by hand.
 
-## Step 6 — Set up Temporal Cloud
-
-1. Create a namespace (note its full name, e.g. `postiz.a1b2c3`).
-2. Create an **API key** and copy it.
-3. Note the gRPC endpoint, e.g. `postiz.a1b2c3.us-east-1.aws.api.temporal.io:7233`.
-4. **Create two custom Search Attributes on the namespace**, both of type `Text`:
-   - `organizationId`
-   - `postId`
-
-   > This step is easy to miss and Postiz will misbehave without it. Postiz
-   > auto-creates these attributes at boot **only when `TEMPORAL_TLS` is not
-   > `true`** — `temporal.register.ts` returns early when TLS is on. Because
-   > Temporal Cloud requires TLS, you must create them manually.
-
-## Step 7 — Create the storage bucket
+## Step 6 — Create the storage bucket
 
 1. **Storage → New Bucket**, name it e.g. `postiz-media`.
 2. On the bucket detail page, note the **endpoint URL** and the **CDN / public
@@ -157,7 +143,7 @@ variable names Postiz expects. Do not also set them by hand.
 Media must be publicly readable, since Postiz hands the browser a direct URL
 (`CLOUDFLARE_BUCKET_URL` + filename) rather than proxying it.
 
-## Step 8 — Set the environment variables
+## Step 7 — Set the environment variables
 
 Copy `cranl.env.example`, fill in every `<<< FILL IN >>>`, then paste the result
 into **App → Environment → Raw Mode**.
@@ -174,16 +160,16 @@ Start with the free `*.cranl.net` subdomain in `MAIN_URL`, `FRONTEND_URL` and
 
 > CranL does **not** restart the app when variables change — trigger a redeploy.
 
-## Step 9 — Deploy and verify
+## Step 8 — Deploy and verify
 
 Redeploy, then watch the runtime logs. On a healthy first boot you should see
-Prisma push the schema, then pm2 bring up `backend`, `frontend` and
-`orchestrator`.
+Prisma push the schema, then pm2 bring up `backend`, `frontend`, `workers`
+and `cron`.
 
 Open the app URL, register the first account, then set
 `DISABLE_REGISTRATION=true` and redeploy so nobody else can sign up.
 
-## Step 10 — Custom domain
+## Step 9 — Custom domain
 
 **App → Domains → Add Domain**, then create the DNS record CranL shows you.
 
@@ -218,11 +204,11 @@ and check the upstream release notes for migration steps first.
 
 ## Resource sizing
 
-The single container runs nginx plus three Node processes (Next.js frontend,
-NestJS backend, Temporal worker). CranL publishes 2 GB / 2 vCPU for Basic and
+The single container runs nginx plus four Node processes (Next.js frontend,
+NestJS backend, BullMQ workers, cron). CranL publishes 2 GB / 2 vCPU for Basic and
 4 GB / 4 vCPU for Pro, but does not document the Enterprise tier — confirm with
 CranL that your app gets **at least 4 GB**. Below that the frontend and
-orchestrator will contend for memory and pm2 will restart-loop.
+workers will contend for memory and pm2 will restart-loop.
 
 Because we pull a prebuilt image instead of compiling, the build itself is light
 — the memory matters at runtime, not build time.
@@ -235,8 +221,8 @@ Because we pull a prebuilt image instead of compiling, the build itself is light
 |---|---|
 | App status `Error`, no logs | Port setting is not `5000` |
 | `404` on register, or "browser got a 404 when trying to contact the API" | `NEXT_PUBLIC_BACKEND_URL` wrong, or missing the `/api` suffix |
-| Backend crash-loops at boot | Temporal unreachable — check `TEMPORAL_ADDRESS`, `TEMPORAL_API_KEY`, and that `TEMPORAL_TLS=true` |
-| Posts schedule but never publish | Orchestrator not connected, or the `organizationId` / `postId` search attributes were never created |
+| Backend crash-loops at boot | `DATABASE_URL` or `REDIS_URL` missing/unreachable — check both databases are running and in the same region |
+| Posts schedule but never publish | Redis unreachable — BullMQ workers cannot pick up jobs |
 | Uploaded images 404 | Bucket not publicly readable, or `CLOUDFLARE_BUCKET_URL` has a trailing `/` (Postiz appends its own, giving `//`) |
 | Logged out after every deploy | `JWT_SECRET` not set, so a new one is generated each boot |
 | Prisma cannot connect | Database and app are in different regions, or the inject was never applied |

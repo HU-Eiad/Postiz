@@ -17,7 +17,7 @@ on:
       postiz_version:
         description: 'Upstream Postiz tag (check github.com/gitroomhq/postiz-app/tags -- version.txt is stale and NOT the release version)'
         required: true
-        default: 'v2.23.0'
+        default: 'v2.11.3'
 
 permissions:
   contents: read

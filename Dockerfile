@@ -21,11 +21,18 @@
 # Upgrading: re-run the workflow with the new upstream tag, bump the tag here,
 # commit, push. CranL redeploys automatically.
 # ---------------------------------------------------------------------------
-FROM ghcr.io/hu-eiad/postiz:v2.23.0
+# --- INTERIM: official upstream image, no build required ------------------
+# Use this while storage is STORAGE_PROVIDER=local. Uploads are lost on every
+# redeploy (CranL apps have no persistent volume), which is fine for kicking
+# the tyres but not for real use.
+FROM ghcr.io/gitroomhq/postiz-app:v2.11.3
 
-# If you would rather use Cloudflare R2 and skip the patched build entirely,
-# use the official upstream image instead and leave S3_ENDPOINT unset:
-# FROM ghcr.io/gitroomhq/postiz-app:v2.23.0
+# --- TARGET: our patched image, once MinIO is up ---------------------------
+# Adds S3_ENDPOINT / S3_FORCE_PATH_STYLE support, which stock Postiz lacks.
+# Build it via Actions -> "Build patched Postiz image" (v2.11.3), then swap
+# the two FROM lines. The patch is backward compatible, so this image also
+# behaves identically to upstream when S3_ENDPOINT is unset.
+# FROM ghcr.io/hu-eiad/postiz:v2.11.3
 
 # nginx inside the image listens on 5000 (0.0.0.0) and proxies:
 #   /         -> frontend  (Next.js, localhost:4200)
