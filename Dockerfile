@@ -44,5 +44,9 @@ EXPOSE 5000
 
 # Inherited from the base image, restated because CranL requires the final
 # image to declare a CMD or ENTRYPOINT. `pnpm run pm2` runs prisma db push
-# (auto-migrate) and then starts backend + frontend + orchestrator under pm2.
-CMD ["sh", "-c", "nginx && pnpm run pm2"]
+# (auto-migrate) and then starts backend + frontend + workers + cron under pm2.
+#
+# PORT=3000: CranL injects PORT=5000 (the app's Port setting), and the backend
+# listens on process.env.PORT || 3000 -- so without this it collides with nginx
+# on 5000 (EADDRINUSE). nginx still owns 5000 and proxies /api/ to 3000.
+CMD ["sh", "-c", "nginx && PORT=3000 pnpm run pm2"]
